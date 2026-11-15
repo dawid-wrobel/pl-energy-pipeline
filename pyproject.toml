@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pl-energy-pipeline"
+version = "0.1.0"
+description = "ELT pipeline for Polish power system data: PSE, Energy-Charts and Open-Meteo into DuckDB, modelled with dbt, orchestrated by Dagster."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+    "requests==2.34.2",
+    "pandas==3.1.1",
+    "pyarrow==26.0.1",
+    "duckdb==2.0.0",
+    "dbt-core==1.12.7",
+    "dbt-duckdb==1.11.1",
+    "dagster==1.13.30",
+    "dagster-webserver==1.13.30",
+    "dagster-dbt==0.29.30",
+    "streamlit==1.67.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "ruff==0.17.5",
+]
+
+[tool.setuptools.packages.find]
+include = ["ingestion*", "orchestration*", "dashboard*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

@@ -8,7 +8,9 @@ PSE conventions worth knowing:
 - `business_date` is the trading day in Polish local time.
 - `dtime` is the END of the interval, in local time (DST applies), so a day has
   96 quarter-hour rows, or 92/100 on the days the clocks change.
-- OData filtering: `$filter=business_date eq 'YYYY-MM-DD'`, rows in `value`.
+- OData filtering: `$filter=business_date eq 'YYYY-MM-DD'`, rows in `value`, next page
+  in `nextLink` (older docs call it `@odata.nextLink`; both are accepted).
+- Both reports carry `dtime_utc`: the unambiguous end of the interval in UTC.
 
 Usage from the shell (also works as a backfill over a date range):
 
@@ -38,7 +40,7 @@ logger = logging.getLogger(__name__)
 PSE_BASE_URL = "https://api.raporty.pse.pl/api"
 SOURCE = "pse"
 WARSAW = ZoneInfo("Europe/Warsaw")
-MAX_PAGES = 50  # safety net against endless @odata.nextLink loops
+MAX_PAGES = 50  # safety net against endless nextLink loops
 
 
 class SupportsGetJson(Protocol):
@@ -66,8 +68,19 @@ class PseReport:
 HIS_WLK_CAL = PseReport(
     name="his-wlk-cal",
     dataset="his_wlk_cal",
-    fields=("dtime", "period", "pv", "wi"),
-    numeric_fields=("pv", "wi"),
+    fields=(
+        "dtime",
+        "period",
+        "dtime_utc",
+        "period_utc",
+        "pv",
+        "wi",
+        "demand",
+        "business_date",
+        "publication_ts",
+        "publication_ts_utc",
+    ),
+    numeric_fields=("pv", "wi", "demand"),
 )
 
 RCE_PLN = PseReport(
@@ -123,7 +136,7 @@ def fetch_report(
     for _ in range(MAX_PAGES):
         payload = client.get_json(url)
         rows.extend(_extract_rows(payload, url))
-        next_link = payload.get("@odata.nextLink")
+        next_link = payload.get("nextLink") or payload.get("@odata.nextLink")
         if not next_link:
             return rows
         url = urljoin(url, next_link)

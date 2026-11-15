@@ -33,12 +33,18 @@ def rce_row(index: int, business_date: str = "2026-03-01") -> dict[str, Any]:
     }
 
 
-def wind_solar_row(index: int) -> dict[str, Any]:
+def wind_solar_row(index: int, business_date: str = "2026-03-01") -> dict[str, Any]:
     return {
-        "dtime": f"2026-03-01 00:{index:02d}:00",
+        "dtime": f"{business_date} 00:{index:02d}:00",
         "period": f"00:{index:02d} - 00:{index + 15:02d}",
+        "dtime_utc": f"{business_date} 00:{index:02d}:00",
+        "period_utc": f"00:{index:02d} - 00:{index + 15:02d}",
         "pv": 0,
         "wi": 1000 + index,
+        "demand": 15000 + index,
+        "business_date": business_date,
+        "publication_ts": "2026-03-02 02:00:00",
+        "publication_ts_utc": "2026-03-02 01:00:00",
     }
 
 
@@ -63,9 +69,15 @@ class StubClient:
 def test_build_url_uses_odata_select_and_filter() -> None:
     assert pse.build_url(HIS_WLK_CAL, date(2025, 9, 12)) == (
         "https://api.raporty.pse.pl/api/his-wlk-cal"
-        "?$select=dtime%2Cperiod%2Cpv%2Cwi"
+        "?$select=dtime%2Cperiod%2Cdtime_utc%2Cperiod_utc%2Cpv%2Cwi%2Cdemand"
+        "%2Cbusiness_date%2Cpublication_ts%2Cpublication_ts_utc"
         "&$filter=business_date%20eq%20%272025-09-12%27"
     )
+
+
+def test_both_reports_request_unambiguous_utc_time() -> None:
+    assert "dtime_utc" in HIS_WLK_CAL.fields
+    assert "dtime_utc" in RCE_PLN.fields
 
 
 def test_fetch_report_returns_rows_from_value() -> None:
@@ -77,10 +89,11 @@ def test_fetch_report_returns_rows_from_value() -> None:
     assert len(client.urls) == 1
 
 
-def test_fetch_report_follows_next_link() -> None:
-    next_url = "https://api.raporty.pse.pl/api/rce-pln?$skiptoken=abc"
+@pytest.mark.parametrize("link_key", ["nextLink", "@odata.nextLink"])
+def test_fetch_report_follows_next_link(link_key: str) -> None:
+    next_url = "https://api.raporty.pse.pl/api/rce-pln?$first=1&$after=abc"
     client = StubClient(
-        {"value": [rce_row(0)], "@odata.nextLink": next_url},
+        {"value": [rce_row(0)], link_key: next_url},
         {"value": [rce_row(15)]},
     )
 
@@ -91,8 +104,8 @@ def test_fetch_report_follows_next_link() -> None:
 
 
 def test_fetch_report_stops_on_endless_paging() -> None:
-    link = "https://api.raporty.pse.pl/api/rce-pln?$skiptoken=loop"
-    client = StubClient(*[{"value": [rce_row(0)], "@odata.nextLink": link}] * pse.MAX_PAGES)
+    link = "https://api.raporty.pse.pl/api/rce-pln?$first=1&$after=loop"
+    client = StubClient(*[{"value": [rce_row(0)], "nextLink": link}] * pse.MAX_PAGES)
 
     with pytest.raises(UnexpectedResponseError, match="pages"):
         pse.fetch_report(client, RCE_PLN, DAY)
@@ -109,9 +122,10 @@ def test_rows_to_frame_keeps_expected_columns_and_casts_numbers() -> None:
 
     df = pse.rows_to_frame(rows, HIS_WLK_CAL, DAY)
 
-    assert list(df.columns) == ["dtime", "period", "pv", "wi"]
+    assert list(df.columns) == list(HIS_WLK_CAL.fields)
     assert df["pv"].dtype == "float64"
     assert df["wi"].dtype == "float64"
+    assert df["demand"].dtype == "float64"
 
 
 def test_rows_to_frame_rejects_empty_input() -> None:
